@@ -57,16 +57,13 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [editIdx, setEditIdx] = useState(null);
-  const [initialized, setInitialized] = useState(false);
-
-  // KPIs editables
   const [clientesUnicos, setClientesUnicos] = useState(832000);
   const [proyeccion, setProyeccion] = useState(2200000);
   const [editingKpi, setEditingKpi] = useState(null);
   const [kpiTemp, setKpiTemp] = useState("");
 
   useEffect(() => {
-    const dbRef = ref(db, "dcp/eventos");
+    const dbRef = ref(db, "dcp");
     const unsub = onValue(dbRef, (snapshot) => {
       const val = snapshot.val();
       if (val) {
@@ -75,15 +72,19 @@ export default function App() {
           setProyeccion(val.kpis.proyeccion ?? 2200000);
         }
         if (val.eventos) {
-          const arr = Object.values(val.eventos).sort((a, b) => {
-            const pa = a.fecha.split("/").reverse().join("");
-            const pb = b.fecha.split("/").reverse().join("");
-            return pa.localeCompare(pb);
-          });
+          const raw = val.eventos;
+          const arr = Object.values(raw)
+            .filter(d => d && d.fecha && d.eventos)
+            .sort((a, b) => {
+              const pa = a.fecha.split("/").reverse().join("");
+              const pb = b.fecha.split("/").reverse().join("");
+              return pa.localeCompare(pb);
+            });
           setData(arr);
+        } else {
+          seedDefaultData();
         }
-        setInitialized(true);
-      } else if (!initialized) {
+      } else {
         seedDefaultData();
       }
       setLoading(false);
@@ -92,22 +93,19 @@ export default function App() {
   }, []);
 
   const seedDefaultData = async () => {
-    const eventosRef = ref(db, "dcp/eventos/eventos");
     const obj = {};
     DEFAULT_DATA.forEach((d, i) => { obj[i] = d; });
-    await set(eventosRef, obj);
+    await set(ref(db, "dcp/eventos"), obj);
   };
 
   const saveEventos = async (newArr) => {
-    const dbRef = ref(db, "dcp/eventos/eventos");
     const obj = {};
     newArr.forEach((d, i) => { obj[i] = d; });
-    await set(dbRef, obj);
+    await set(ref(db, "dcp/eventos"), obj);
   };
 
   const saveKpis = async (cu, pr) => {
-    const dbRef = ref(db, "dcp/eventos/kpis");
-    await set(dbRef, { clientesUnicos: cu, proyeccion: pr });
+    await set(ref(db, "dcp/kpis"), { clientesUnicos: cu, proyeccion: pr });
   };
 
   const handleSave = async () => {
@@ -170,12 +168,13 @@ export default function App() {
   };
 
   const handleReset = async () => {
-    await saveEventos(DEFAULT_DATA);
+    await seedDefaultData();
     setSaveMsg("↺ Datos restaurados");
     setTimeout(() => setSaveMsg(""), 2000);
   };
 
-  const totalBonos = data.reduce((s, d) => s + d.eventos, 0);
+  // Total se calcula automáticamente sumando todos los eventos
+  const totalBonos = data.reduce((s, d) => s + (d.eventos || 0), 0);
   const avgEventos = data.length ? Math.round(totalBonos / data.length) : 0;
   const belowDays = data.filter(d => d.eventos < UMBRAL).length;
   const chartData = data.map(d => ({ ...d, promedio: PROMEDIO_DIA }));
@@ -198,12 +197,6 @@ export default function App() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-
-  const kpis = [
-    { label: `Total de bonos entregados ${lastFecha}`, value: formatNum(totalBonos), accent: "#5bc8f5", key: null },
-    { label: "Clientes únicos recibiendo megas gratis", value: formatNum(clientesUnicos), accent: "#4ecdc4", key: "clientes" },
-    { label: "Proyección usuarios únicos (mes)", value: formatNum(proyeccion), accent: "#a78bfa", key: "proyeccion" },
-  ];
 
   return (
     <div style={{
@@ -231,48 +224,66 @@ export default function App() {
 
       {/* KPI Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
-        {kpis.map((kpi, i) => (
-          <div key={i} style={{
-            background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
-            border: `1px solid ${kpi.accent}33`, borderRadius: 14, padding: "22px 26px",
-            position: "relative", overflow: "hidden",
-          }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${kpi.accent}, transparent)` }} />
-            <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>{kpi.label}</div>
-            {editingKpi === kpi.key ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  style={{ ...inputStyle, fontSize: 20, fontWeight: 700, padding: "6px 10px" }}
-                  value={kpiTemp}
-                  onChange={e => setKpiTemp(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSaveKpi()}
-                  autoFocus
-                />
-                <button onClick={handleSaveKpi} style={{
-                  background: kpi.accent, border: "none", borderRadius: 8,
-                  color: "#fff", fontWeight: 700, padding: "6px 12px", cursor: "pointer", fontSize: 13,
-                }}>✓</button>
-                <button onClick={() => setEditingKpi(null)} style={{
-                  background: "transparent", border: "1px solid #1e3a50", borderRadius: 8,
-                  color: "#8ab4c8", padding: "6px 10px", cursor: "pointer", fontSize: 13,
-                }}>✕</button>
-              </div>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: kpi.accent }}>
-                  {kpi.value}
-                </div>
-                {kpi.key && (
-                  <button onClick={() => handleEditKpi(kpi.key)} style={{
-                    background: "transparent", border: "1px solid #1e3a50", borderRadius: 6,
-                    color: "#4a7a94", cursor: "pointer", fontSize: 14, padding: "4px 8px",
-                    marginTop: 4,
-                  }} title="Editar">✏️</button>
-                )}
-              </div>
-            )}
+        {/* Total bonos - automático */}
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #5bc8f533", borderRadius: 14, padding: "22px 26px",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #5bc8f5, transparent)" }} />
+          <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>Total de bonos entregados {lastFecha}</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: "#5bc8f5" }}>
+            {formatNum(totalBonos)}
           </div>
-        ))}
+        </div>
+
+        {/* Clientes únicos - editable */}
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #4ecdc433", borderRadius: 14, padding: "22px 26px",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #4ecdc4, transparent)" }} />
+          <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>Clientes únicos recibiendo megas gratis</div>
+          {editingKpi === "clientes" ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input style={{ ...inputStyle, fontSize: 20, fontWeight: 700, padding: "6px 10px" }}
+                value={kpiTemp} onChange={e => setKpiTemp(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSaveKpi()} autoFocus />
+              <button onClick={handleSaveKpi} style={{ background: "#4ecdc4", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, padding: "6px 12px", cursor: "pointer" }}>✓</button>
+              <button onClick={() => setEditingKpi(null)} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 8, color: "#8ab4c8", padding: "6px 10px", cursor: "pointer" }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: "#4ecdc4" }}>{formatNum(clientesUnicos)}</div>
+              <button onClick={() => handleEditKpi("clientes")} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 6, color: "#4a7a94", cursor: "pointer", fontSize: 14, padding: "4px 8px", marginTop: 4 }}>✏️</button>
+            </div>
+          )}
+        </div>
+
+        {/* Proyección - editable */}
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #a78bfa33", borderRadius: 14, padding: "22px 26px",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #a78bfa, transparent)" }} />
+          <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>Proyección usuarios únicos (mes)</div>
+          {editingKpi === "proyeccion" ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input style={{ ...inputStyle, fontSize: 20, fontWeight: 700, padding: "6px 10px" }}
+                value={kpiTemp} onChange={e => setKpiTemp(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSaveKpi()} autoFocus />
+              <button onClick={handleSaveKpi} style={{ background: "#a78bfa", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, padding: "6px 12px", cursor: "pointer" }}>✓</button>
+              <button onClick={() => setEditingKpi(null)} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 8, color: "#8ab4c8", padding: "6px 10px", cursor: "pointer" }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: "#a78bfa" }}>{formatNum(proyeccion)}</div>
+              <button onClick={() => handleEditKpi("proyeccion")} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 6, color: "#4a7a94", cursor: "pointer", fontSize: 14, padding: "4px 8px", marginTop: 4 }}>✏️</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chart */}
