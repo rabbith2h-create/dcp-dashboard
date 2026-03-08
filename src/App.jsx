@@ -23,7 +23,10 @@ function formatNum(n) {
   if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
   return n.toLocaleString("es-MX");
 }
-function formatFull(n) { return n?.toLocaleString("es-MX") ?? "—"; }
+
+function formatFull(n) {
+  return n?.toLocaleString("es-MX") ?? "—";
+}
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -31,10 +34,17 @@ const CustomTooltip = ({ active, payload, label }) => {
   const pct = ev ? ((ev / PROMEDIO_DIA) * 100).toFixed(1) : null;
   const below = ev < UMBRAL;
   return (
-    <div style={{ background: "#111", border: "1px solid #FFD700", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#fff", minWidth: 170 }}>
-      <div style={{ fontWeight: 700, marginBottom: 6, color: "#FFD700" }}>{label}</div>
+    <div style={{
+      background: "#0f1923", border: "1px solid #1e3a4a", borderRadius: 8,
+      padding: "10px 14px", fontSize: 13, color: "#e0f0ff", minWidth: 170,
+    }}>
+      <div style={{ fontWeight: 700, marginBottom: 6, color: "#5bc8f5" }}>{label}</div>
       <div>Eventos: <span style={{ fontWeight: 700 }}>{formatFull(ev)}</span></div>
-      {pct && <div style={{ marginTop: 4, color: below ? "#ff4444" : "#4CAF50" }}>{pct}% del promedio {below ? "⚠️ bajo umbral" : "✓ OK"}</div>}
+      {pct && (
+        <div style={{ marginTop: 4, color: below ? "#ff6b6b" : "#4ecdc4" }}>
+          {pct}% del promedio {below ? "⚠️ bajo umbral" : "✓ OK"}
+        </div>
+      )}
     </div>
   );
 };
@@ -53,24 +63,50 @@ export default function App() {
   const [kpiTemp, setKpiTemp] = useState("");
 
   useEffect(() => {
-    const unsub = onValue(ref(db, "dcp"), (snapshot) => {
+    const dbRef = ref(db, "dcp");
+    const unsub = onValue(dbRef, (snapshot) => {
       const val = snapshot.val();
       if (val) {
-        if (val.kpis) { setClientesUnicos(val.kpis.clientesUnicos ?? 832000); setProyeccion(val.kpis.proyeccion ?? 2200000); }
+        if (val.kpis) {
+          setClientesUnicos(val.kpis.clientesUnicos ?? 832000);
+          setProyeccion(val.kpis.proyeccion ?? 2200000);
+        }
         if (val.eventos) {
-          const arr = Object.values(val.eventos).filter(d => d && d.fecha && d.eventos)
-            .sort((a, b) => a.fecha.split("/").reverse().join("").localeCompare(b.fecha.split("/").reverse().join("")));
+          const raw = val.eventos;
+          const arr = Object.values(raw)
+            .filter(d => d && d.fecha && d.eventos)
+            .sort((a, b) => {
+              const pa = a.fecha.split("/").reverse().join("");
+              const pb = b.fecha.split("/").reverse().join("");
+              return pa.localeCompare(pb);
+            });
           setData(arr);
-        } else { seedDefaultData(); }
-      } else { seedDefaultData(); }
+        } else {
+          seedDefaultData();
+        }
+      } else {
+        seedDefaultData();
+      }
       setLoading(false);
     });
     return () => unsub();
   }, []);
 
-  const seedDefaultData = async () => { const obj = {}; DEFAULT_DATA.forEach((d, i) => { obj[i] = d; }); await set(ref(db, "dcp/eventos"), obj); };
-  const saveEventos = async (arr) => { const obj = {}; arr.forEach((d, i) => { obj[i] = d; }); await set(ref(db, "dcp/eventos"), obj); };
-  const saveKpis = async (cu, pr) => { await set(ref(db, "dcp/kpis"), { clientesUnicos: cu, proyeccion: pr }); };
+  const seedDefaultData = async () => {
+    const obj = {};
+    DEFAULT_DATA.forEach((d, i) => { obj[i] = d; });
+    await set(ref(db, "dcp/eventos"), obj);
+  };
+
+  const saveEventos = async (newArr) => {
+    const obj = {};
+    newArr.forEach((d, i) => { obj[i] = d; });
+    await set(ref(db, "dcp/eventos"), obj);
+  };
+
+  const saveKpis = async (cu, pr) => {
+    await set(ref(db, "dcp/kpis"), { clientesUnicos: cu, proyeccion: pr });
+  };
 
   const handleSave = async () => {
     if (!newFecha || !newEventos) return;
@@ -78,31 +114,66 @@ export default function App() {
     if (isNaN(ev)) return;
     setSaving(true);
     let updated;
-    if (editIdx !== null) { updated = data.map((d, i) => i === editIdx ? { fecha: newFecha, eventos: ev } : d); setEditIdx(null); }
-    else {
+    if (editIdx !== null) {
+      updated = data.map((d, i) => i === editIdx ? { fecha: newFecha, eventos: ev } : d);
+      setEditIdx(null);
+    } else {
       const exists = data.findIndex(d => d.fecha === newFecha);
-      updated = exists >= 0 ? data.map((d, i) => i === exists ? { ...d, eventos: ev } : d) : [...data, { fecha: newFecha, eventos: ev }];
+      if (exists >= 0) {
+        updated = data.map((d, i) => i === exists ? { ...d, eventos: ev } : d);
+      } else {
+        updated = [...data, { fecha: newFecha, eventos: ev }];
+      }
     }
-    updated.sort((a, b) => a.fecha.split("/").reverse().join("").localeCompare(b.fecha.split("/").reverse().join("")));
+    updated.sort((a, b) => {
+      const pa = a.fecha.split("/").reverse().join("");
+      const pb = b.fecha.split("/").reverse().join("");
+      return pa.localeCompare(pb);
+    });
     await saveEventos(updated);
-    setNewFecha(""); setNewEventos(""); setSaving(false);
-    setSaveMsg("✓ Publicado en tiempo real"); setTimeout(() => setSaveMsg(""), 2500);
+    setNewFecha("");
+    setNewEventos("");
+    setSaving(false);
+    setSaveMsg("✓ Publicado en tiempo real");
+    setTimeout(() => setSaveMsg(""), 2500);
   };
 
-  const handleEditKpi = (kpi) => { setEditingKpi(kpi); setKpiTemp(kpi === "clientes" ? clientesUnicos.toString() : proyeccion.toString()); };
+  const handleEditKpi = (kpi) => {
+    setEditingKpi(kpi);
+    setKpiTemp(kpi === "clientes" ? clientesUnicos.toString() : proyeccion.toString());
+  };
+
   const handleSaveKpi = async () => {
     const val = parseInt(kpiTemp.replace(/[^0-9]/g, ""), 10);
     if (isNaN(val)) return;
-    let cu = clientesUnicos, pr = proyeccion;
-    if (editingKpi === "clientes") { setClientesUnicos(val); cu = val; }
-    if (editingKpi === "proyeccion") { setProyeccion(val); pr = val; }
-    await saveKpis(cu, pr); setEditingKpi(null); setKpiTemp("");
+    let newCu = clientesUnicos;
+    let newPr = proyeccion;
+    if (editingKpi === "clientes") { setClientesUnicos(val); newCu = val; }
+    if (editingKpi === "proyeccion") { setProyeccion(val); newPr = val; }
+    await saveKpis(newCu, newPr);
+    setEditingKpi(null);
+    setKpiTemp("");
   };
 
-  const handleEdit = (idx) => { setEditIdx(idx); setNewFecha(data[idx].fecha); setNewEventos(data[idx].eventos.toString()); };
-  const handleDelete = async (idx) => { const updated = data.filter((_, i) => i !== idx); await saveEventos(updated); if (editIdx === idx) { setEditIdx(null); setNewFecha(""); setNewEventos(""); } };
-  const handleReset = async () => { await seedDefaultData(); setSaveMsg("↺ Datos restaurados"); setTimeout(() => setSaveMsg(""), 2000); };
+  const handleEdit = (idx) => {
+    setEditIdx(idx);
+    setNewFecha(data[idx].fecha);
+    setNewEventos(data[idx].eventos.toString());
+  };
 
+  const handleDelete = async (idx) => {
+    const updated = data.filter((_, i) => i !== idx);
+    await saveEventos(updated);
+    if (editIdx === idx) { setEditIdx(null); setNewFecha(""); setNewEventos(""); }
+  };
+
+  const handleReset = async () => {
+    await seedDefaultData();
+    setSaveMsg("↺ Datos restaurados");
+    setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  // Total se calcula automáticamente sumando todos los eventos
   const totalBonos = data.reduce((s, d) => s + (d.eventos || 0), 0);
   const avgEventos = data.length ? Math.round(totalBonos / data.length) : 0;
   const belowDays = data.filter(d => d.eventos < UMBRAL).length;
@@ -110,122 +181,182 @@ export default function App() {
   const lastFecha = data[data.length - 1]?.fecha ?? "—";
 
   const inputStyle = {
-    background: "#222", border: "1px solid #FFD700", borderRadius: 8,
-    color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none",
+    background: "#0d1e2b", border: "1px solid #1e3a50", borderRadius: 8,
+    color: "#e0f0ff", padding: "10px 14px", fontSize: 14, outline: "none",
     width: "100%", boxSizing: "border-box", fontFamily: "'DM Sans', sans-serif",
   };
 
   if (loading) return (
-    <div style={{ background: "#111", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, color: "#FFD700", fontFamily: "'DM Sans', sans-serif" }}>
-      <div style={{ fontSize: 48, animation: "spin 1s linear infinite" }}>⟳</div>
+    <div style={{
+      background: "#071219", minHeight: "100vh", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 16,
+      color: "#5bc8f5", fontFamily: "'DM Sans', sans-serif",
+    }}>
+      <div style={{ fontSize: 32, animation: "spin 1s linear infinite" }}>⟳</div>
       <div style={{ fontSize: 16 }}>Conectando con Firebase…</div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
-  const KpiCard = ({ label, value, color, editKey }) => (
-    <div style={{ background: "#1a1a1a", border: `2px solid ${color}`, borderRadius: 14, padding: "22px 26px", position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: color }} />
-      <div style={{ fontSize: 13, color: "#aaa", marginBottom: 10 }}>{label}</div>
-      {editingKpi === editKey ? (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input style={{ ...inputStyle, fontSize: 20, fontWeight: 700, padding: "6px 10px" }}
-            value={kpiTemp} onChange={e => setKpiTemp(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleSaveKpi()} autoFocus />
-          <button onClick={handleSaveKpi} style={{ background: color, border: "none", borderRadius: 8, color: "#111", fontWeight: 700, padding: "6px 12px", cursor: "pointer", fontSize: 16 }}>✓</button>
-          <button onClick={() => setEditingKpi(null)} style={{ background: "transparent", border: `1px solid ${color}`, borderRadius: 8, color: "#aaa", padding: "6px 10px", cursor: "pointer" }}>✕</button>
-        </div>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color }}>{value}</div>
-          {editKey && <button onClick={() => handleEditKpi(editKey)} style={{ background: "transparent", border: `1px solid ${color}44`, borderRadius: 6, color: "#888", cursor: "pointer", fontSize: 14, padding: "4px 8px", marginTop: 4 }}>✏️</button>}
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <div style={{ background: "#111", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", color: "#fff", padding: "28px 32px", boxSizing: "border-box" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
-
-      {/* Header */}
+    <div style={{
+      background: "#071219", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif",
+      color: "#e0f0ff", padding: "28px 32px", boxSizing: "border-box",
+    }}>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <div style={{ background: "#FFD700", borderRadius: 12, padding: "8px 16px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 20, color: "#111", letterSpacing: 1 }}>bait</div>
-        <div style={{ width: 1, height: 36, background: "#333" }} />
+        <div style={{
+          background: "linear-gradient(135deg, #0a9fd4, #0d5f8a)", borderRadius: 12,
+          padding: "8px 16px", fontFamily: "'Space Grotesk', sans-serif",
+          fontWeight: 700, fontSize: 18, letterSpacing: 1, color: "#fff",
+        }}>bait</div>
+        <div style={{ width: 1, height: 36, background: "#1e3a4a" }} />
         <div>
           <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 22, color: "#fff" }}>
-            DCP <span style={{ color: "#FFD700" }}>|</span> Evolutivo de DCP — Marzo 2026
+            DCP <span style={{ color: "#5bc8f5" }}>|</span> Evolutivo de DCP — Marzo 2026
           </div>
-          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>Dashboard en tiempo real · Firebase Realtime Database</div>
+          <div style={{ fontSize: 12, color: "#4a7a94", marginTop: 2 }}>Dashboard en tiempo real · Firebase Realtime Database</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4CAF50", boxShadow: "0 0 8px #4CAF50", animation: "pulse 2s infinite" }} />
-          <span style={{ fontSize: 12, color: "#4CAF50", fontWeight: 600 }}>EN VIVO</span>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ecdc4", boxShadow: "0 0 8px #4ecdc4", animation: "pulse 2s infinite" }} />
+          <span style={{ fontSize: 12, color: "#4ecdc4", fontWeight: 600 }}>EN VIVO</span>
         </div>
       </div>
 
       {/* KPI Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
-        <KpiCard label={`Total de bonos entregados ${lastFecha}`} value={formatNum(totalBonos)} color="#FFD700" editKey={null} />
-        <KpiCard label="Clientes únicos recibiendo megas gratis" value={formatNum(clientesUnicos)} color="#4CAF50" editKey="clientes" />
-        <KpiCard label="Proyección usuarios únicos (mes)" value={formatNum(proyeccion)} color="#FF6B35" editKey="proyeccion" />
+        {/* Total bonos - automático */}
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #5bc8f533", borderRadius: 14, padding: "22px 26px",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #5bc8f5, transparent)" }} />
+          <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>Total de bonos entregados {lastFecha}</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: "#5bc8f5" }}>
+            {formatNum(totalBonos)}
+          </div>
+        </div>
+
+        {/* Clientes únicos - editable */}
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #4ecdc433", borderRadius: 14, padding: "22px 26px",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #4ecdc4, transparent)" }} />
+          <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>Clientes únicos recibiendo megas gratis</div>
+          {editingKpi === "clientes" ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input style={{ ...inputStyle, fontSize: 20, fontWeight: 700, padding: "6px 10px" }}
+                value={kpiTemp} onChange={e => setKpiTemp(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSaveKpi()} autoFocus />
+              <button onClick={handleSaveKpi} style={{ background: "#4ecdc4", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, padding: "6px 12px", cursor: "pointer" }}>✓</button>
+              <button onClick={() => setEditingKpi(null)} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 8, color: "#8ab4c8", padding: "6px 10px", cursor: "pointer" }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: "#4ecdc4" }}>{formatNum(clientesUnicos)}</div>
+              <button onClick={() => handleEditKpi("clientes")} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 6, color: "#4a7a94", cursor: "pointer", fontSize: 14, padding: "4px 8px", marginTop: 4 }}>✏️</button>
+            </div>
+          )}
+        </div>
+
+        {/* Proyección - editable */}
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #a78bfa33", borderRadius: 14, padding: "22px 26px",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #a78bfa, transparent)" }} />
+          <div style={{ fontSize: 13, color: "#6a9db5", marginBottom: 10 }}>Proyección usuarios únicos (mes)</div>
+          {editingKpi === "proyeccion" ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input style={{ ...inputStyle, fontSize: 20, fontWeight: 700, padding: "6px 10px" }}
+                value={kpiTemp} onChange={e => setKpiTemp(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSaveKpi()} autoFocus />
+              <button onClick={handleSaveKpi} style={{ background: "#a78bfa", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, padding: "6px 12px", cursor: "pointer" }}>✓</button>
+              <button onClick={() => setEditingKpi(null)} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 8, color: "#8ab4c8", padding: "6px 10px", cursor: "pointer" }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 34, color: "#a78bfa" }}>{formatNum(proyeccion)}</div>
+              <button onClick={() => handleEditKpi("proyeccion")} style={{ background: "transparent", border: "1px solid #1e3a50", borderRadius: 6, color: "#4a7a94", cursor: "pointer", fontSize: 14, padding: "4px 8px", marginTop: 4 }}>✏️</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chart */}
-      <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 14, padding: "24px 28px", marginBottom: 24 }}>
+      <div style={{
+        background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+        border: "1px solid #1e3a4a", borderRadius: 14, padding: "24px 28px", marginBottom: 24,
+      }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, color: "#FFD700" }}>Eventos Diarios</div>
-            <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>Promedio x día: 250,000 · Umbral inferior 10% = 225,000</div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Eventos Diarios</div>
+            <div style={{ fontSize: 12, color: "#4a7a94", marginTop: 2 }}>Promedio x día: 250,000 · Umbral inferior 10% = 225,000</div>
           </div>
-          <div style={{ display: "flex", gap: 20, fontSize: 12, color: "#888" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: 2, background: "#FFD700", display: "inline-block" }} /> EVENTOS</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, height: 2, background: "#FF6B35", display: "inline-block" }} /> Promedio</span>
+          <div style={{ display: "flex", gap: 20, fontSize: 12, color: "#6a9db5" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 2, background: "#0a6fa8", display: "inline-block" }} /> EVENTOS
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 16, height: 2, background: "#f97316", display: "inline-block" }} /> Promedio
+            </span>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={chartData} margin={{ top: 24, right: 10, left: 10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
-            <XAxis dataKey="fecha" tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "#888", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v.toLocaleString()} width={75} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a2f3f" />
+            <XAxis dataKey="fecha" tick={{ fill: "#4a7a94", fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "#4a7a94", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v.toLocaleString()} width={75} />
             <Tooltip content={<CustomTooltip />} />
-            <ReferenceLine y={UMBRAL} stroke="#ff444466" strokeDasharray="4 4" label={{ value: "Umbral -10%", fill: "#ff4444", fontSize: 11, position: "insideTopRight" }} />
-            <Bar dataKey="eventos" fill="#FFD700" radius={[6, 6, 0, 0]} label={{ position: "top", fill: "#aaa", fontSize: 10, formatter: v => v.toLocaleString() }} />
-            <Line type="monotone" dataKey="promedio" stroke="#FF6B35" strokeWidth={2} dot={{ fill: "#FF6B35", r: 4 }} activeDot={{ r: 6 }} />
+            <ReferenceLine y={UMBRAL} stroke="#ff6b6b66" strokeDasharray="4 4"
+              label={{ value: "Umbral -10%", fill: "#ff6b6b", fontSize: 11, position: "insideTopRight" }} />
+            <Bar dataKey="eventos" fill="#0a6fa8" radius={[6, 6, 0, 0]}
+              label={{ position: "top", fill: "#8ab4c8", fontSize: 10, formatter: v => v.toLocaleString() }} />
+            <Line type="monotone" dataKey="promedio" stroke="#f97316" strokeWidth={2}
+              dot={{ fill: "#f97316", r: 4 }} activeDot={{ r: 6 }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
       {/* Bottom */}
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 20 }}>
-        <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 14, padding: "24px" }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 18, color: "#FFD700" }}>
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #1e3a4a", borderRadius: 14, padding: "24px",
+        }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 18 }}>
             {editIdx !== null ? "✏️ Editar registro" : "➕ Agregar dato diario"}
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 6 }}>Fecha (DD/MM/AAAA)</label>
+            <label style={{ fontSize: 12, color: "#4a7a94", display: "block", marginBottom: 6 }}>Fecha (DD/MM/AAAA)</label>
             <input style={inputStyle} placeholder="ej. 06/03/2026" value={newFecha} onChange={e => setNewFecha(e.target.value)} />
           </div>
           <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 6 }}>Número de eventos</label>
-            <input style={inputStyle} placeholder="ej. 230000" value={newEventos} onChange={e => setNewEventos(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSave()} />
+            <label style={{ fontSize: 12, color: "#4a7a94", display: "block", marginBottom: 6 }}>Número de eventos</label>
+            <input style={inputStyle} placeholder="ej. 230000" value={newEventos}
+              onChange={e => setNewEventos(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSave()} />
           </div>
           <button onClick={handleSave} disabled={saving || !newFecha || !newEventos} style={{
             width: "100%", padding: "12px", borderRadius: 10, border: "none",
-            background: "#FFD700", color: "#111", fontWeight: 700, fontSize: 14, cursor: "pointer",
-            opacity: (!newFecha || !newEventos) ? 0.4 : 1, fontFamily: "'DM Sans', sans-serif",
+            background: "linear-gradient(135deg, #0a9fd4, #0d5f8a)",
+            color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer",
+            opacity: (!newFecha || !newEventos) ? 0.5 : 1, fontFamily: "'DM Sans', sans-serif",
           }}>
             {saving ? "Guardando…" : editIdx !== null ? "Actualizar" : "Guardar y publicar 🚀"}
           </button>
           {editIdx !== null && (
             <button onClick={() => { setEditIdx(null); setNewFecha(""); setNewEventos(""); }} style={{
               width: "100%", marginTop: 8, padding: "10px", borderRadius: 10,
-              border: "1px solid #444", background: "transparent", color: "#888", cursor: "pointer", fontSize: 13,
+              border: "1px solid #1e3a50", background: "transparent",
+              color: "#8ab4c8", cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif",
             }}>Cancelar</button>
           )}
-          {saveMsg && <div style={{ marginTop: 12, textAlign: "center", color: "#4CAF50", fontSize: 13, fontWeight: 600 }}>{saveMsg}</div>}
-          <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #333" }}>
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>Resumen del período</div>
+          {saveMsg && <div style={{ marginTop: 12, textAlign: "center", color: "#4ecdc4", fontSize: 13, fontWeight: 600 }}>{saveMsg}</div>}
+          <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1e3a4a" }}>
+            <div style={{ fontSize: 12, color: "#4a7a94", marginBottom: 12 }}>Resumen del período</div>
             {[
               { label: "Días registrados", value: data.length },
               { label: "Promedio real", value: formatFull(avgEventos) },
@@ -234,23 +365,30 @@ export default function App() {
               { label: "Mínimo", value: formatFull(Math.min(...(data.length ? data.map(d => d.eventos) : [0]))) },
             ].map((s, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
-                <span style={{ color: "#666" }}>{s.label}</span>
-                <span style={{ fontWeight: 700, color: s.warn ? "#ff4444" : "#fff" }}>{s.value}</span>
+                <span style={{ color: "#6a9db5" }}>{s.label}</span>
+                <span style={{ fontWeight: 700, color: s.warn ? "#ff6b6b" : "#e0f0ff" }}>{s.value}</span>
               </div>
             ))}
           </div>
-          <button onClick={handleReset} style={{ width: "100%", marginTop: 14, padding: "8px", borderRadius: 8, border: "1px solid #ff444433", background: "transparent", color: "#ff444488", cursor: "pointer", fontSize: 12 }}>
-            Restaurar datos originales
-          </button>
+          <button onClick={handleReset} style={{
+            width: "100%", marginTop: 14, padding: "8px", borderRadius: 8,
+            border: "1px solid #ff6b6b33", background: "transparent",
+            color: "#ff6b6b88", cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif",
+          }}>Restaurar datos originales</button>
         </div>
 
-        <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 14, padding: "24px", overflow: "auto" }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 18, color: "#FFD700" }}>Registros del mes</div>
+        <div style={{
+          background: "linear-gradient(135deg, #0d1e2b 0%, #0a1920 100%)",
+          border: "1px solid #1e3a4a", borderRadius: 14, padding: "24px", overflow: "auto",
+        }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 18 }}>
+            Registros del mes
+          </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid #333" }}>
+              <tr style={{ borderBottom: "1px solid #1e3a4a" }}>
                 {["Fecha", "Eventos", "vs Promedio", "Estado", ""].map((h, i) => (
-                  <th key={i} style={{ textAlign: i === 0 ? "left" : "right", padding: "8px 12px", color: "#666", fontWeight: 600 }}>{h}</th>
+                  <th key={i} style={{ textAlign: i === 0 ? "left" : "right", padding: "8px 12px", color: "#4a7a94", fontWeight: 600 }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -260,20 +398,22 @@ export default function App() {
                 const pct = ((row.eventos / PROMEDIO_DIA) * 100).toFixed(1);
                 const ok = row.eventos >= UMBRAL;
                 return (
-                  <tr key={realIdx} style={{ borderBottom: "1px solid #222", transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#222"}
+                  <tr key={realIdx} style={{ borderBottom: "1px solid #0d1e2b", transition: "background 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#0a1920"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     <td style={{ padding: "10px 12px", fontWeight: 600 }}>{row.fecha}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: "monospace", color: "#FFD700" }}>{formatFull(row.eventos)}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: ok ? "#4CAF50" : "#ff4444" }}>{pct}%</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: "monospace", color: "#5bc8f5" }}>{formatFull(row.eventos)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: ok ? "#4ecdc4" : "#ff6b6b" }}>{pct}%</td>
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                      <span style={{ background: ok ? "#4CAF5022" : "#ff444422", color: ok ? "#4CAF50" : "#ff4444", border: `1px solid ${ok ? "#4CAF5044" : "#ff444444"}`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>
-                        {ok ? "✓ OK" : "⚠ Bajo"}
-                      </span>
+                      <span style={{
+                        background: ok ? "#4ecdc422" : "#ff6b6b22", color: ok ? "#4ecdc4" : "#ff6b6b",
+                        border: `1px solid ${ok ? "#4ecdc444" : "#ff6b6b44"}`,
+                        borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600,
+                      }}>{ok ? "✓ OK" : "⚠ Bajo"}</span>
                     </td>
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                      <button onClick={() => handleEdit(realIdx)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 15, marginRight: 6 }}>✏️</button>
-                      <button onClick={() => handleDelete(realIdx)} style={{ background: "none", border: "none", color: "#ff444466", cursor: "pointer", fontSize: 15 }}>🗑</button>
+                      <button onClick={() => handleEdit(realIdx)} style={{ background: "none", border: "none", color: "#4a7a94", cursor: "pointer", fontSize: 15, marginRight: 6 }}>✏️</button>
+                      <button onClick={() => handleDelete(realIdx)} style={{ background: "none", border: "none", color: "#ff6b6b66", cursor: "pointer", fontSize: 15 }}>🗑</button>
                     </td>
                   </tr>
                 );
@@ -285,8 +425,8 @@ export default function App() {
       <style>{`
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes spin { to { transform: rotate(360deg); } }
-        input::placeholder { color: #444; }
-        input:focus { border-color: #FFD700 !important; box-shadow: 0 0 0 2px #FFD70022; }
+        input::placeholder { color: #2a4a5e; }
+        input:focus { border-color: #0a9fd4 !important; box-shadow: 0 0 0 2px #0a9fd422; }
         * { box-sizing: border-box; }
       `}</style>
     </div>
